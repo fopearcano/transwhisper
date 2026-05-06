@@ -10,8 +10,8 @@ SETTINGS_FILENAME = "settings.json"
 
 @dataclass
 class GuiSettings:
-    base_url: str = "http://192.168.1.50:1234/v1"
-    model: str = "whisper-1"
+    base_url: str = "http://192.168.1.141:8080"
+    model: str = "whisper.cpp"
     selected_microphone: str | None = None
     window_width: int = 920
     window_height: int = 680

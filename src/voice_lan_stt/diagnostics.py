@@ -10,9 +10,9 @@ from urllib.parse import urlparse
 from .config import Settings
 from .lmstudio_client import (
     EndpointUnsupportedError,
-    LMStudioClient,
     ModelUnavailableError,
     ServerUnreachableError,
+    WhisperCppClient,
 )
 
 
@@ -38,7 +38,7 @@ class DiagnosticReport:
     parsed_url: ParsedBaseUrl | None
     url_error: str | None = None
     tcp: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
-    models: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
+    server: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
     audio_endpoint: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
     available_models: list[str] = field(default_factory=list)
     likely_fixes: list[str] = field(default_factory=list)
@@ -96,22 +96,20 @@ def create_silent_wav(duration_seconds: float = 0.1, sample_rate: int = 16000) -
     return temp_path
 
 
-def check_models(settings: Settings) -> tuple[CheckResult, list[str]]:
+def check_server(settings: Settings) -> CheckResult:
     try:
-        models = LMStudioClient(settings, timeout=10).list_models()
+        message = WhisperCppClient(settings, timeout=10).test_server()
     except Exception as exc:
-        return CheckResult(False, str(exc)), []
+        return CheckResult(False, str(exc))
 
-    if models:
-        return CheckResult(True, f"GET /models returned {len(models)} model(s)"), models
-    return CheckResult(True, "GET /models succeeded but returned no models"), []
+    return CheckResult(True, message)
 
 
 def check_audio_endpoint(settings: Settings) -> CheckResult:
     wav_path: Path | None = None
     try:
         wav_path = create_silent_wav(sample_rate=settings.sample_rate)
-        LMStudioClient(settings, timeout=20).transcribe(wav_path)
+        WhisperCppClient(settings, timeout=20).transcribe(wav_path)
     except EndpointUnsupportedError as exc:
         return CheckResult(False, f"audio endpoint unsupported: {exc}")
     except ModelUnavailableError as exc:
@@ -124,7 +122,7 @@ def check_audio_endpoint(settings: Settings) -> CheckResult:
         if wav_path is not None:
             wav_path.unlink(missing_ok=True)
 
-    return CheckResult(True, "/audio/transcriptions accepted a short silent WAV")
+    return CheckResult(True, "POST /inference accepted a short silent WAV")
 
 
 def run_diagnostics(settings: Settings) -> DiagnosticReport:
@@ -145,12 +143,12 @@ def run_diagnostics(settings: Settings) -> DiagnosticReport:
 
     report.tcp = test_tcp_connection(report.parsed_url)
     if not report.tcp.ok:
-        report.models = CheckResult(False, "skipped because TCP connection failed")
+        report.server = CheckResult(False, "skipped because TCP connection failed")
         report.audio_endpoint = CheckResult(False, "skipped because TCP connection failed")
         report.likely_fixes = likely_fixes(report)
         return report
 
-    report.models, report.available_models = check_models(settings)
+    report.server = check_server(settings)
     report.audio_endpoint = check_audio_endpoint(settings)
     report.likely_fixes = likely_fixes(report)
     return report
@@ -160,8 +158,8 @@ def format_diagnostic_report(report: DiagnosticReport) -> str:
     lines = [
         "Voice LAN STT diagnostics",
         f"Local hostname: {report.hostname}",
-        f"Configured LM Studio base URL: {report.base_url}",
-        f"Configured model: {report.model}",
+        f"Configured Whisper.cpp base URL: {report.base_url}",
+        f"Configured model label: {report.model}",
     ]
 
     if report.parsed_url is None:
@@ -176,7 +174,7 @@ def format_diagnostic_report(report: DiagnosticReport) -> str:
     lines.extend(
         [
             _format_check("TCP connection", report.tcp),
-            _format_check("GET /models", report.models),
+            _format_check("GET server root", report.server),
         ]
     )
 
@@ -186,7 +184,7 @@ def format_diagnostic_report(report: DiagnosticReport) -> str:
             marker = " (configured)" if model == report.model else ""
             lines.append(f"- {model}{marker}")
 
-    lines.append(_format_check("POST /audio/transcriptions", report.audio_endpoint))
+    lines.append(_format_check("POST /inference", report.audio_endpoint))
     lines.append("Likely fixes:")
     if report.likely_fixes:
         lines.extend(f"- {fix}" for fix in report.likely_fixes)
@@ -201,61 +199,56 @@ def likely_fixes(report: DiagnosticReport) -> list[str]:
 
     if report.parsed_url is None:
         return [
-            "Set LMSTUDIO_BASE_URL to a full URL such as http://192.168.1.50:1234/v1.",
+            "Set WHISPERCPP_BASE_URL to a full URL such as http://192.168.1.141:8080.",
         ]
 
     host = report.parsed_url.host
     if host in {"localhost", "127.0.0.1", "::1"}:
         fixes.append(
-            "If this client is not the LM Studio machine, use the LM Studio "
+            "If this client is not the Whisper.cpp machine, use the Whisper.cpp "
             "host IP instead of localhost."
         )
 
     if not report.tcp.ok:
         fixes.extend(
             [
-                "LM Studio server may not be running; enable the local server in LM Studio.",
+                "Whisper.cpp server may not be running; start whisper-server.exe.",
                 "Wrong IP or port: confirm the server is reachable at "
                 f"{host}:{report.parsed_url.port}.",
-                "Firewall may be blocking inbound connections; allow the LM Studio "
-                "port, usually 1234.",
-                "LM Studio may be bound only to localhost; configure it to listen "
+                "Firewall may be blocking inbound connections; allow the Whisper.cpp "
+                "port, usually 8080.",
+                "Whisper.cpp may be bound only to localhost; start it with a host that listens "
                 "on the LAN interface.",
             ]
         )
         return _dedupe(fixes)
 
-    if not report.models.ok:
+    if not report.server.ok:
         fixes.extend(
             [
-                "The server is reachable, but the OpenAI-compatible /models route "
-                "failed; confirm the base URL ends with /v1.",
-                "Confirm LM Studio's local server is enabled and serving "
-                "OpenAI-compatible endpoints.",
+                "The TCP port is reachable, but the HTTP server root failed; confirm "
+                "whisper-server.exe is the process listening on this port.",
             ]
         )
 
     if report.available_models and report.model not in report.available_models:
-        fixes.append(
-            f"Wrong model name: configured model {report.model!r} was not listed by GET /models."
-        )
+        fixes.append(f"Wrong model label: configured model {report.model!r} was not listed.")
 
     if not report.audio_endpoint.ok:
         message = report.audio_endpoint.message.lower()
         if "unsupported" in message or "404" in message:
             fixes.append(
-                "Audio endpoint unsupported: update LM Studio or load/use an "
-                "STT-capable Whisper model."
+                "Audio endpoint unsupported: confirm whisper-server.exe exposes POST /inference."
             )
         if "model unavailable" in message:
             fixes.append(
-                "Wrong model name or no STT model loaded; set LMSTUDIO_STT_MODEL "
-                "to a listed Whisper/STT model."
+                "Wrong model or no model loaded; restart whisper-server.exe with "
+                "the intended ggml model file."
             )
         if "unreachable" in message:
             fixes.append(
                 "Connection dropped during the audio probe; recheck firewall, "
-                "IP address, and LM Studio server status."
+                "IP address, and Whisper.cpp server status."
             )
 
     return _dedupe(fixes)

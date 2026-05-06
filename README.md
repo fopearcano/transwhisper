@@ -1,8 +1,8 @@
 # voice-lan-stt
 
-Minimal Python CLI that records microphone audio, saves it as a temporary WAV file, sends it to an LM Studio server on your local network, and prints the returned Whisper/STT transcription.
+Minimal Python CLI and desktop GUI that records microphone audio, saves it as a temporary WAV file, sends it to a Whisper.cpp `whisper-server.exe` server on your local network, and prints or displays the returned transcription.
 
-No cloud APIs are used. The CLI talks only to the LM Studio-compatible server URL you configure.
+No cloud APIs are used. The app talks only to the Whisper.cpp server URL you configure.
 
 ## Quickstart
 
@@ -33,7 +33,7 @@ python -m voice_lan_stt.cli record --seconds 5
 - Python 3.10+
 - Windows or Linux
 - A microphone available to PortAudio/sounddevice
-- LM Studio running a Whisper/STT model with the local server enabled
+- Whisper.cpp `whisper-server.exe` running with a local Whisper model
 
 ## Install
 
@@ -81,36 +81,44 @@ pip install -e ".[gui]"
 
 Defaults:
 
-- `LMSTUDIO_BASE_URL=http://localhost:1234/v1`
-- `LMSTUDIO_API_KEY=lm-studio`
-- `LMSTUDIO_STT_MODEL=whisper-1`
+- `WHISPERCPP_BASE_URL=http://192.168.1.141:8080`
+- `WHISPERCPP_API_KEY=` optional
+- `WHISPERCPP_STT_MODEL=whisper.cpp`
 - `SAMPLE_RATE=16000`
 
-For a LAN server, point the base URL at the host machine running LM Studio:
+For a LAN server, point the base URL at the host machine running `whisper-server.exe`:
 
 ```bash
-export LMSTUDIO_BASE_URL=http://192.168.1.50:1234/v1
-export LMSTUDIO_STT_MODEL=whisper-1
+export WHISPERCPP_BASE_URL=http://192.168.1.141:8080
+export WHISPERCPP_STT_MODEL=whisper.cpp
 ```
 
 CLI flags can override environment variables:
 
 ```bash
-python -m voice_lan_stt.cli --base-url http://192.168.1.50:1234/v1 --model whisper-1 record --seconds 5
+python -m voice_lan_stt.cli --base-url http://192.168.1.141:8080 record --seconds 5
 ```
 
-## LM Studio LAN Setup Notes
+Legacy `LMSTUDIO_*` environment variables are still accepted as a fallback, but new setups should use `WHISPERCPP_*`.
 
-1. In LM Studio, load a Whisper/STT-capable model.
-2. Enable the local server.
-3. If another computer will call it over LAN, configure LM Studio to bind/listen on the LAN interface if needed instead of only `localhost`.
-4. Use the host machine IP address, for example `http://192.168.1.50:1234/v1`.
-5. Allow inbound traffic through the host firewall on port `1234`.
+## Whisper.cpp LAN Setup Notes
+
+1. Build or download Whisper.cpp with `whisper-server.exe`.
+2. Start the server with a model file, host binding, and port `8080`.
+3. If another computer will call it over LAN, bind/listen on the LAN interface instead of only `localhost`.
+4. Use the host machine IP address, for example `http://192.168.1.141:8080`.
+5. Allow inbound traffic through the host firewall on port `8080`.
 6. From the client machine, run `test-server` first to confirm the server is reachable.
+
+Example Windows server command:
+
+```powershell
+.\whisper-server.exe --host 0.0.0.0 --port 8080 -m .\models\ggml-base.en.bin
+```
 
 ## Usage
 
-Check that LM Studio is reachable and list available models:
+Check that Whisper.cpp is reachable:
 
 ```bash
 python -m voice_lan_stt.cli test-server
@@ -122,9 +130,9 @@ Run LAN diagnostics:
 python -m voice_lan_stt.cli diagnose
 ```
 
-The diagnostic command prints the local hostname, configured LM Studio base URL, parsed host and port, TCP connection result, `GET /models` result, and a short `/audio/transcriptions` probe using a generated silent WAV. It never needs microphone access. Use it when a LAN client cannot reach LM Studio; the likely-fixes section calls out common issues like firewall rules, wrong IP address, LM Studio not running, LM Studio bound only to `localhost`, unsupported audio endpoints, and wrong model names.
+The diagnostic command prints the local hostname, configured Whisper.cpp base URL, parsed host and port, TCP connection result, server root result, and a short `/inference` probe using a generated silent WAV. It never needs microphone access. Use it when a LAN client cannot reach Whisper.cpp; the likely-fixes section calls out common issues like firewall rules, wrong IP address, `whisper-server.exe` not running, server bound only to `localhost`, and unsupported `/inference` endpoints.
 
-Record five seconds, send the WAV to `/audio/transcriptions`, and print the transcript:
+Record five seconds, send the WAV to `/inference`, and print the transcript:
 
 ```bash
 python -m voice_lan_stt.cli record --seconds 5
@@ -205,7 +213,7 @@ You can also run it as a module after installing the package:
 python -m voice_lan_stt.gui
 ```
 
-The GUI provides LM Studio Base URL and model fields, a microphone dropdown with refresh, Start Recording and Stop Recording buttons, a live `MM:SS` timer, a lightweight microphone level meter, Test Server, Copy Latest Transcript, Clear Transcript, a transcript area, and a status label. Recording and transcription run in worker threads, so the window remains responsive. Temporary WAV files are deleted after transcription.
+The GUI window title is `TransWhisper - Voive LAN STT`. It provides Whisper.cpp Base URL and model label fields, a microphone dropdown with refresh, Start Recording and Stop Recording buttons, a live `MM:SS` timer, a lightweight microphone level meter, Test Server, Copy Latest Transcript, Clear Transcript, a transcript area, and a status label. Recording and transcription run in worker threads, so the window remains responsive. Temporary WAV files are deleted after transcription.
 
 Transcripts are appended chronologically with timestamps, for example:
 
@@ -214,19 +222,19 @@ Transcripts are appended chronologically with timestamps, for example:
 Hello this is a test.
 ```
 
-GUI settings are saved in `settings.json`, including the last LM Studio URL, selected microphone, selected model, window size, and window position. The GUI does not use a database.
+GUI settings are saved in `settings.json`, including the last Whisper.cpp URL, selected microphone, selected model label, window size, and window position. The GUI does not use a database.
 
 Example LAN call:
 
 ```bash
-LMSTUDIO_BASE_URL=http://192.168.1.50:1234/v1 python -m voice_lan_stt.cli record --seconds 5
+WHISPERCPP_BASE_URL=http://192.168.1.141:8080 python -m voice_lan_stt.cli record --seconds 5
 ```
 
 ## Troubleshooting
 
-- `Could not reach LM Studio`: confirm LM Studio server is running, the base URL includes `/v1`, the host IP is correct, and the firewall allows port `1234`.
-- `The server does not support /audio/transcriptions`: confirm your LM Studio version exposes the OpenAI-compatible audio transcription endpoint and that an STT/Whisper model is loaded.
-- `Model '...' is unavailable`: run `test-server`, then set `LMSTUDIO_STT_MODEL` or `--model` to an available STT model.
+- `Could not reach Whisper.cpp`: confirm `whisper-server.exe` is running, the host IP is correct, and the firewall allows port `8080`.
+- `The server does not support /inference`: confirm you are pointing at Whisper.cpp `whisper-server.exe`.
+- Empty transcript: confirm the server was started with a valid model file and the microphone captured speech.
 - `Could not record from the microphone`: confirm a mic is connected and the terminal has microphone permission.
 - `Clipboard copy requires the optional dependency pyperclip`: install the clipboard extra with `pip install -e ".[clipboard]"`.
 

@@ -108,6 +108,9 @@ def test_parse_export_options() -> None:
 
 def test_settings_from_cli_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
+        "WHISPERCPP_BASE_URL",
+        "WHISPERCPP_API_KEY",
+        "WHISPERCPP_STT_MODEL",
         "LMSTUDIO_BASE_URL",
         "LMSTUDIO_API_KEY",
         "LMSTUDIO_STT_MODEL",
@@ -116,7 +119,7 @@ def test_settings_from_cli_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
     args = Namespace(
-        base_url="http://192.168.1.50:1234/v1/",
+        base_url="http://192.168.1.141:8080/",
         api_key="abc",
         model="whisper-lan",
         sample_rate=22050,
@@ -124,7 +127,7 @@ def test_settings_from_cli_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = settings_from_args(args)
 
-    assert settings.base_url == "http://192.168.1.50:1234/v1"
+    assert settings.base_url == "http://192.168.1.141:8080"
     assert settings.api_key == "abc"
     assert settings.stt_model == "whisper-lan"
     assert settings.sample_rate == 22050

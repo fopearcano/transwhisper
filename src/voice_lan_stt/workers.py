@@ -10,7 +10,7 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from .config import Settings
-from .lmstudio_client import LMStudioClient
+from .lmstudio_client import WhisperCppClient
 from .recorder import ManualRecordingSession
 
 
@@ -53,15 +53,12 @@ class ServerTestWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            models = LMStudioClient(self.settings, timeout=10).list_models()
+            message = WhisperCppClient(self.settings, timeout=10).test_server()
         except Exception as exc:
             self.error.emit(readable_error(exc))
             return
 
-        if models:
-            self.success.emit(f"Server reachable. Models: {', '.join(models)}")
-        else:
-            self.success.emit("Server reachable, but no models were returned.")
+        self.success.emit(message)
 
 
 class RecordingWorker(QObject):
@@ -127,9 +124,9 @@ class TranscribeWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            transcript = LMStudioClient(self.settings).transcribe(self.wav_path)
+            transcript = WhisperCppClient(self.settings).transcribe(self.wav_path)
             if transcript.strip() == "":
-                raise ValueError("LM Studio returned an empty transcript.")
+                raise ValueError("Whisper.cpp returned an empty transcript.")
         except Exception as exc:
             self.error.emit(readable_error(exc))
             return
@@ -146,13 +143,13 @@ def readable_error(exc: Exception) -> str:
 
     lowered = message.lower()
     if "timed out" in lowered or "timeout" in lowered:
-        return f"Timeout while contacting LM Studio: {message}"
+        return f"Timeout while contacting Whisper.cpp: {message}"
     if "could not reach" in lowered or "connection" in lowered:
-        return f"LM Studio unreachable: {message}"
-    if "audio/transcriptions" in lowered or "unsupported" in lowered:
+        return f"Whisper.cpp unreachable: {message}"
+    if "inference" in lowered or "unsupported" in lowered:
         return f"Unsupported audio endpoint: {message}"
     if "text field" in lowered or "json" in lowered:
-        return f"Invalid response from LM Studio: {message}"
+        return f"Invalid response from Whisper.cpp: {message}"
     if "microphone" in lowered or "input device" in lowered:
         return f"Microphone error: {message}"
     return message

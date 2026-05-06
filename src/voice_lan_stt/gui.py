@@ -30,7 +30,7 @@ from .settings_manager import GuiSettings, SettingsManager
 from .widgets import LevelMeter
 from .workers import DeviceListWorker, RecordingWorker, ServerTestWorker, TranscribeWorker
 
-GUI_DEFAULT_BASE_URL = "http://192.168.1.50:1234/v1"
+GUI_DEFAULT_BASE_URL = "http://192.168.1.141:8080"
 
 
 class MainWindow(QMainWindow):
@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Voice LAN STT")
+        self.setWindowTitle("TransWhisper - Voive LAN STT")
 
         self.settings_manager = SettingsManager()
         self.saved_settings = self.settings_manager.load()
@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
 
     def _build_layout(self) -> None:
         form = QFormLayout()
-        form.addRow("LM Studio Base URL", self.base_url_input)
+        form.addRow("Whisper.cpp Base URL", self.base_url_input)
         form.addRow("STT Model", self.model_input)
 
         device_row = QHBoxLayout()
@@ -197,7 +197,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def test_server(self) -> None:
         self.set_busy(True)
-        self.set_status("Sending to LM Studio")
+        self.set_status("Sending to Whisper.cpp")
         worker = ServerTestWorker(self.current_settings())
         thread = self._start_worker(worker, worker.run)
         worker.success.connect(self.on_server_success)
@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
         self.recording_worker = None
         self.recording_thread = None
         self.level_meter.set_level(0.0)
-        self.set_status("Sending to LM Studio")
+        self.set_status("Sending to Whisper.cpp")
         self.start_transcription(wav_path)
 
     @Slot(str)

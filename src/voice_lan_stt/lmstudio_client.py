@@ -8,53 +8,56 @@ import requests
 from .config import Settings
 
 
-class LMStudioError(RuntimeError):
-    """Base class for LM Studio client errors."""
+class WhisperCppError(RuntimeError):
+    """Base class for Whisper.cpp client errors."""
 
 
-class ServerUnreachableError(LMStudioError):
-    """Raised when the LM Studio server cannot be reached."""
+class ServerUnreachableError(WhisperCppError):
+    """Raised when the Whisper.cpp server cannot be reached."""
 
 
-class ModelUnavailableError(LMStudioError):
+class ModelUnavailableError(WhisperCppError):
     """Raised when the requested STT model is unavailable."""
 
 
-class EndpointUnsupportedError(LMStudioError):
-    """Raised when the target LM Studio endpoint is unsupported."""
+class EndpointUnsupportedError(WhisperCppError):
+    """Raised when the target Whisper.cpp endpoint is unsupported."""
 
 
-class LMStudioClient:
+class WhisperCppClient:
     def __init__(self, settings: Settings, timeout: float = 60.0) -> None:
         self.settings = settings
         self.timeout = timeout
 
     @property
     def headers(self) -> dict[str, str]:
+        if not self.settings.api_key:
+            return {}
         return {"Authorization": f"Bearer {self.settings.api_key}"}
 
-    def list_models(self) -> list[str]:
+    def test_server(self) -> str:
         try:
             response = requests.get(
-                self.settings.models_url,
+                self.settings.server_url,
                 headers=self.headers,
                 timeout=10,
             )
         except requests.RequestException as exc:
             raise ServerUnreachableError(
-                f"Could not reach LM Studio at {self.settings.base_url}. "
+                f"Could not reach Whisper.cpp at {self.settings.base_url}. "
                 "Check that the local server is running and reachable over LAN."
             ) from exc
 
-        if response.status_code == 404:
-            raise EndpointUnsupportedError(
-                f"LM Studio did not expose GET {self.settings.models_url}."
-            )
-        self._raise_for_error_status(response)
+        if response.status_code >= 500:
+            self._raise_for_error_status(response)
+        return (
+            f"Whisper.cpp server reachable at {self.settings.base_url} "
+            f"(HTTP {response.status_code})."
+        )
 
-        payload = response.json()
-        models = payload.get("data", [])
-        return [str(item.get("id", item)) for item in models]
+    def list_models(self) -> list[str]:
+        self.test_server()
+        return [self.settings.stt_model]
 
     def transcribe(self, wav_path: Path) -> str:
         try:
@@ -62,32 +65,35 @@ class LMStudioClient:
                 response = requests.post(
                     self.settings.transcription_url,
                     headers=self.headers,
-                    data={"model": self.settings.stt_model},
+                    data={
+                        "temperature": "0.0",
+                        "temperature_inc": "0.2",
+                        "response_format": "json",
+                    },
                     files={"file": (wav_path.name, audio_file, "audio/wav")},
                     timeout=self.timeout,
                 )
         except requests.RequestException as exc:
             raise ServerUnreachableError(
-                f"Could not reach LM Studio at {self.settings.base_url}. "
-                "Check the server URL, host IP, firewall, and port 1234."
+                f"Could not reach Whisper.cpp at {self.settings.base_url}. "
+                "Check the server URL, host IP, firewall, and port 8080."
             ) from exc
 
         if response.status_code == 404:
             raise EndpointUnsupportedError(
-                "The server does not support /audio/transcriptions. "
-                "Confirm your LM Studio version and that an STT/Whisper model is loaded."
+                "The server does not support /inference. "
+                "Confirm whisper-server.exe is running and reachable on the configured port."
             )
         if response.status_code in {400, 404, 422} and self._mentions_model(response):
             raise ModelUnavailableError(
-                f"Model {self.settings.stt_model!r} is unavailable. Load it in LM Studio "
-                "or set LMSTUDIO_STT_MODEL to an available model."
+                f"Model {self.settings.stt_model!r} is unavailable. Start whisper-server.exe "
+                "with the intended model file."
             )
         self._raise_for_error_status(response)
 
-        payload = response.json()
-        transcript = payload.get("text")
+        transcript = _transcript_from_response(response)
         if not isinstance(transcript, str):
-            raise LMStudioError("The transcription response did not include a text field.")
+            raise WhisperCppError("The transcription response did not include a text field.")
         return transcript
 
     @staticmethod
@@ -103,7 +109,7 @@ class LMStudioClient:
             response.raise_for_status()
         except requests.HTTPError as exc:
             message = _response_error_message(response)
-            raise LMStudioError(message) from exc
+            raise WhisperCppError(message) from exc
 
 
 def _response_error_message(response: requests.Response) -> str:
@@ -113,4 +119,20 @@ def _response_error_message(response: requests.Response) -> str:
     except ValueError:
         details = response.text
 
-    return f"LM Studio returned HTTP {response.status_code}. Response: {details!r}"
+    return f"Whisper.cpp returned HTTP {response.status_code}. Response: {details!r}"
+
+
+def _transcript_from_response(response: requests.Response) -> str | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return response.text.strip()
+
+    if isinstance(payload, dict):
+        text = payload.get("text")
+        return text if isinstance(text, str) else None
+    return None
+
+
+LMStudioError = WhisperCppError
+LMStudioClient = WhisperCppClient

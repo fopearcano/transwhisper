@@ -14,10 +14,10 @@ from .history import (
 )
 from .lmstudio_client import (
     EndpointUnsupportedError,
-    LMStudioClient,
-    LMStudioError,
     ModelUnavailableError,
     ServerUnreachableError,
+    WhisperCppClient,
+    WhisperCppError,
 )
 from .recorder import (
     MicrophoneError,
@@ -31,14 +31,14 @@ from .recorder import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="voice-lan-stt",
-        description="Record microphone audio and transcribe it through LM Studio over LAN.",
+        description="Record microphone audio and transcribe it through Whisper.cpp over LAN.",
     )
-    parser.add_argument("--base-url", help="LM Studio base URL, e.g. http://192.168.1.50:1234/v1")
+    parser.add_argument("--base-url", help="Whisper.cpp base URL, e.g. http://192.168.1.141:8080")
     parser.add_argument(
-        "--api-key", help="LM Studio API key. Defaults to LMSTUDIO_API_KEY or lm-studio."
+        "--api-key", help="Optional API key. Defaults to WHISPERCPP_API_KEY or empty."
     )
     parser.add_argument(
-        "--model", help="STT model name. Defaults to LMSTUDIO_STT_MODEL or whisper-1."
+        "--model", help="STT model label. Defaults to WHISPERCPP_STT_MODEL or whisper.cpp."
     )
     parser.add_argument(
         "--sample-rate", type=int, help="Microphone sample rate. Defaults to SAMPLE_RATE or 16000."
@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--search", help="Search transcript text before exporting.")
 
     subparsers.add_parser("diagnose", help="Run LAN connectivity diagnostics.")
-    subparsers.add_parser("test-server", help="List models from GET /models.")
+    subparsers.add_parser("test-server", help="Check that the Whisper.cpp server is reachable.")
     return parser
 
 
@@ -150,7 +150,7 @@ def save_history(
 
 
 def run_record(settings: Settings, seconds: float, keep_audio: bool = False) -> int:
-    client = LMStudioClient(settings)
+    client = WhisperCppClient(settings)
     wav_path: Path | None = None
 
     try:
@@ -168,7 +168,7 @@ def run_record(settings: Settings, seconds: float, keep_audio: bool = False) -> 
         ServerUnreachableError,
         ModelUnavailableError,
         EndpointUnsupportedError,
-        LMStudioError,
+        WhisperCppError,
         ValueError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -197,7 +197,7 @@ def copy_to_clipboard(text: str) -> None:
 
 
 def run_ptt(settings: Settings, copy: bool = False, keep_audio: bool = False) -> int:
-    client = LMStudioClient(settings)
+    client = WhisperCppClient(settings)
     wav_path: Path | None = None
 
     try:
@@ -222,7 +222,7 @@ def run_ptt(settings: Settings, copy: bool = False, keep_audio: bool = False) ->
         ServerUnreachableError,
         ModelUnavailableError,
         EndpointUnsupportedError,
-        LMStudioError,
+        WhisperCppError,
         RuntimeError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -250,7 +250,7 @@ def run_listen(
     max_segment_seconds: float,
     keep_audio: bool = False,
 ) -> int:
-    client = LMStudioClient(settings)
+    client = WhisperCppClient(settings)
     options = VadOptions(
         sample_rate=settings.sample_rate,
         threshold=threshold,
@@ -286,7 +286,7 @@ def run_listen(
         ServerUnreachableError,
         ModelUnavailableError,
         EndpointUnsupportedError,
-        LMStudioError,
+        WhisperCppError,
         ValueError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -323,25 +323,20 @@ def run_diagnose(settings: Settings) -> int:
         print("Voice LAN STT diagnostics")
         print(f"Diagnostic failed unexpectedly: {exc}")
         print("Likely fixes:")
-        print("- Check LMSTUDIO_BASE_URL, LMSTUDIO_STT_MODEL, and SAMPLE_RATE.")
-        print("- Confirm LM Studio local server is running and reachable.")
+        print("- Check WHISPERCPP_BASE_URL, WHISPERCPP_STT_MODEL, and SAMPLE_RATE.")
+        print("- Confirm whisper-server.exe is running and reachable.")
     return 0
 
 
 def run_test_server(settings: Settings) -> int:
-    client = LMStudioClient(settings)
+    client = WhisperCppClient(settings)
     try:
-        models = client.list_models()
-    except (ServerUnreachableError, EndpointUnsupportedError, LMStudioError) as exc:
+        message = client.test_server()
+    except (ServerUnreachableError, EndpointUnsupportedError, WhisperCppError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    if models:
-        print("Available models:")
-        for model in models:
-            print(f"- {model}")
-    else:
-        print("Server reachable, but no models were returned.")
+    print(message)
     return 0
 
 

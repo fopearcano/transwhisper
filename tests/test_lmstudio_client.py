@@ -9,9 +9,9 @@ import requests
 from voice_lan_stt.config import Settings
 from voice_lan_stt.lmstudio_client import (
     EndpointUnsupportedError,
-    LMStudioClient,
     ModelUnavailableError,
     ServerUnreachableError,
+    WhisperCppClient,
 )
 
 
@@ -27,26 +27,36 @@ def make_response(status_code: int, payload: dict | None = None, text: str = "")
     return response
 
 
-def test_list_models(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = make_response(200, {"data": [{"id": "whisper-1"}, {"id": "other"}]})
+def test_server_reachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = make_response(200, text="<html>server</html>")
     get = Mock(return_value=response)
     monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.get", get)
 
-    client = LMStudioClient(Settings())
+    client = WhisperCppClient(Settings())
 
-    assert client.list_models() == ["whisper-1", "other"]
+    assert "Whisper.cpp server reachable" in client.test_server()
     get.assert_called_once()
-    assert get.call_args.kwargs["headers"] == {"Authorization": "Bearer lm-studio"}
+    assert get.call_args.kwargs["headers"] == {}
+
+
+def test_server_reachable_with_missing_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = make_response(404, text="not found")
+    get = Mock(return_value=response)
+    monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.get", get)
+
+    client = WhisperCppClient(Settings())
+
+    assert "HTTP 404" in client.test_server()
 
 
 def test_list_models_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
     get = Mock(side_effect=requests.ConnectionError("no route"))
     monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.get", get)
 
-    client = LMStudioClient(Settings(base_url="http://192.168.1.50:1234/v1"))
+    client = WhisperCppClient(Settings(base_url="http://192.168.1.141:8080"))
 
-    with pytest.raises(ServerUnreachableError, match="Could not reach LM Studio"):
-        client.list_models()
+    with pytest.raises(ServerUnreachableError, match="Could not reach Whisper.cpp"):
+        client.test_server()
 
 
 def test_transcribe_returns_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,12 +66,29 @@ def test_transcribe_returns_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     post = Mock(return_value=response)
     monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.post", post)
 
-    client = LMStudioClient(Settings(stt_model="whisper-local"))
+    client = WhisperCppClient(Settings(stt_model="whisper-local"))
 
     assert client.transcribe(wav_path) == "hello lan"
     post.assert_called_once()
-    assert post.call_args.kwargs["data"] == {"model": "whisper-local"}
-    assert post.call_args.kwargs["headers"] == {"Authorization": "Bearer lm-studio"}
+    assert post.call_args.kwargs["data"] == {
+        "temperature": "0.0",
+        "temperature_inc": "0.2",
+        "response_format": "json",
+    }
+    assert post.call_args.kwargs["headers"] == {}
+
+
+def test_transcribe_returns_plain_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    wav_path = tmp_path / "sample.wav"
+    wav_path.write_bytes(b"RIFFfake")
+    response = make_response(200, None, text="plain transcript")
+    response.json.side_effect = ValueError("not json")
+    post = Mock(return_value=response)
+    monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.post", post)
+
+    client = WhisperCppClient(Settings())
+
+    assert client.transcribe(wav_path) == "plain transcript"
 
 
 def test_transcribe_unsupported_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,9 +97,9 @@ def test_transcribe_unsupported_endpoint(tmp_path: Path, monkeypatch: pytest.Mon
     response = make_response(404, {"error": "not found"}, text="not found")
     monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.post", Mock(return_value=response))
 
-    client = LMStudioClient(Settings())
+    client = WhisperCppClient(Settings())
 
-    with pytest.raises(EndpointUnsupportedError, match="/audio/transcriptions"):
+    with pytest.raises(EndpointUnsupportedError, match="/inference"):
         client.transcribe(wav_path)
 
 
@@ -82,7 +109,7 @@ def test_transcribe_model_unavailable(tmp_path: Path, monkeypatch: pytest.Monkey
     response = make_response(422, {"error": "model unavailable"}, text="model unavailable")
     monkeypatch.setattr("voice_lan_stt.lmstudio_client.requests.post", Mock(return_value=response))
 
-    client = LMStudioClient(Settings(stt_model="missing-model"))
+    client = WhisperCppClient(Settings(stt_model="missing-model"))
 
     with pytest.raises(ModelUnavailableError, match="missing-model"):
         client.transcribe(wav_path)

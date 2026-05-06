@@ -1,4 +1,4 @@
-"""LAN speech-to-text CLI for LM Studio."""
+"""LAN speech-to-text CLI for Whisper.cpp."""
 
 __all__ = ["__version__"]
 

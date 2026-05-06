@@ -9,7 +9,7 @@ def test_settings_manager_round_trip(tmp_path) -> None:
 
     manager.save(
         GuiSettings(
-            base_url="http://192.168.1.50:1234/v1",
+            base_url="http://192.168.1.141:8080",
             model="whisper-local",
             selected_microphone="USB Mic",
             window_width=1000,
@@ -21,7 +21,7 @@ def test_settings_manager_round_trip(tmp_path) -> None:
 
     loaded = manager.load()
 
-    assert loaded.base_url == "http://192.168.1.50:1234/v1"
+    assert loaded.base_url == "http://192.168.1.141:8080"
     assert loaded.model == "whisper-local"
     assert loaded.selected_microphone == "USB Mic"
     assert loaded.window_width == 1000

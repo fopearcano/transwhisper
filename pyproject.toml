@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "voice-lan-stt"
 version = "0.1.0"
-description = "CLI microphone recording and LAN transcription via LM Studio Whisper/STT."
+description = "CLI microphone recording and LAN transcription via Whisper.cpp."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {file = "LICENSE"}
 authors = [
     {name = "voice-lan-stt contributors"},
 ]
-keywords = ["lm-studio", "whisper", "speech-to-text", "lan", "audio"]
+keywords = ["whisper-cpp", "whisper", "speech-to-text", "lan", "audio"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
