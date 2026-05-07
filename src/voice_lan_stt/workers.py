@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 try:
-    from PySide6.QtCore import QObject, Signal, Slot
+    from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 except ImportError as exc:  # pragma: no cover
     raise SystemExit(
         "PySide6 is required for the desktop GUI. Install with: pip install PySide6"
@@ -14,9 +16,28 @@ from .recorder import ManualRecordingSession
 from .whispercpp_client import WhisperCppClient
 
 
-class DeviceListWorker(QObject):
+class DeviceListSignals(QObject):
     success = Signal(list)
     error = Signal(str)
+
+
+class TextResultSignals(QObject):
+    success = Signal(str)
+    error = Signal(str)
+
+
+class RecordingSignals(QObject):
+    started = Signal()
+    level = Signal(float)
+    stopped = Signal(object)
+    error = Signal(str)
+
+
+class DeviceListTask(QRunnable):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setAutoDelete(False)
+        self.signals = DeviceListSignals()
 
     @Slot()
     def run(self) -> None:
@@ -25,7 +46,7 @@ class DeviceListWorker(QObject):
 
             devices = sd.query_devices()
         except Exception as exc:
-            self.error.emit(f"No microphone devices could be queried: {exc}")
+            self.signals.error.emit(f"No microphone devices could be queried: {exc}")
             return
 
         input_devices: list[dict[str, object]] = []
@@ -36,18 +57,17 @@ class DeviceListWorker(QObject):
             input_devices.append({"index": index, "name": name})
 
         if not input_devices:
-            self.error.emit("No microphone input devices were found.")
+            self.signals.error.emit("No microphone input devices were found.")
             return
 
-        self.success.emit(input_devices)
+        self.signals.success.emit(input_devices)
 
 
-class ServerTestWorker(QObject):
-    success = Signal(str)
-    error = Signal(str)
-
+class ServerTestTask(QRunnable):
     def __init__(self, settings: Settings) -> None:
         super().__init__()
+        self.setAutoDelete(False)
+        self.signals = TextResultSignals()
         self.settings = settings
 
     @Slot()
@@ -55,69 +75,69 @@ class ServerTestWorker(QObject):
         try:
             message = WhisperCppClient(self.settings, timeout=10).test_server()
         except Exception as exc:
-            self.error.emit(readable_error(exc))
+            self.signals.error.emit(readable_error(exc))
             return
 
-        self.success.emit(message)
+        self.signals.success.emit(message)
 
 
-class RecordingWorker(QObject):
-    started = Signal()
-    level = Signal(float)
-    stopped = Signal(object)
-    error = Signal(str)
-
+class RecordingTask(QRunnable):
     def __init__(self, sample_rate: int, device_index: int | None) -> None:
         super().__init__()
+        self.setAutoDelete(False)
+        self.signals = RecordingSignals()
         self.sample_rate = sample_rate
         self.device_index = device_index
-        self.session: ManualRecordingSession | None = None
+        self._stop_event = threading.Event()
+        self._cancel_event = threading.Event()
 
     @Slot()
-    def start(self) -> None:
+    def run(self) -> None:
+        session: ManualRecordingSession | None = None
         try:
-            self.session = ManualRecordingSession(
+            session = ManualRecordingSession(
                 self.sample_rate,
                 device=self.device_index,
-                level_callback=self.level.emit,
+                level_callback=self.signals.level.emit,
             )
-            self.session.start()
+            session.start()
         except Exception as exc:
-            self.error.emit(readable_error(exc))
+            self.signals.error.emit(readable_error(exc))
             return
 
-        self.started.emit()
+        self.signals.started.emit()
 
-    @Slot()
-    def stop(self) -> None:
-        if self.session is None:
-            self.error.emit("Recording is not running.")
+        while not self._stop_event.wait(0.05):
+            time.sleep(0)
+
+        if self._cancel_event.is_set():
+            if session is not None:
+                session.close()
             return
 
         try:
-            wav_path = self.session.stop_to_temp_wav()
+            wav_path = session.stop_to_temp_wav()
         except Exception as exc:
-            self.error.emit(readable_error(exc))
+            self.signals.error.emit(readable_error(exc))
             return
         finally:
-            self.session.close()
-            self.session = None
+            session.close()
 
-        self.stopped.emit(wav_path)
+        self.signals.stopped.emit(wav_path)
 
-    @Slot()
+    def stop(self) -> None:
+        self._stop_event.set()
+
     def cancel(self) -> None:
-        if self.session is not None:
-            self.session.close()
-            self.session = None
+        self._cancel_event.set()
+        self._stop_event.set()
 
 
-class TranscribeWorker(QObject):
-    success = Signal(str)
-    error = Signal(str)
-
+class TranscribeTask(QRunnable):
     def __init__(self, settings: Settings, wav_path: Path) -> None:
         super().__init__()
+        self.setAutoDelete(False)
+        self.signals = TextResultSignals()
         self.settings = settings
         self.wav_path = wav_path
 
@@ -128,12 +148,12 @@ class TranscribeWorker(QObject):
             if transcript.strip() == "":
                 raise ValueError("Whisper.cpp returned an empty transcript.")
         except Exception as exc:
-            self.error.emit(readable_error(exc))
+            self.signals.error.emit(readable_error(exc))
             return
         finally:
             self.wav_path.unlink(missing_ok=True)
 
-        self.success.emit(transcript)
+        self.signals.success.emit(transcript)
 
 
 def readable_error(exc: Exception) -> str:
