@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 try:
-    from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
+    from PySide6.QtCore import QRunnable, QThreadPool, QTimer, Slot
     from PySide6.QtWidgets import (
         QApplication,
         QComboBox,
@@ -34,15 +34,12 @@ from .config import (
 )
 from .settings_manager import GuiSettings, SettingsManager
 from .widgets import LevelMeter
-from .workers import DeviceListWorker, RecordingWorker, ServerTestWorker, TranscribeWorker
+from .workers import DeviceListTask, RecordingTask, ServerTestTask, TranscribeTask
 
 GUI_DEFAULT_BASE_URL = "http://192.168.1.141:8080"
 
 
 class MainWindow(QMainWindow):
-    stop_recording_requested = Signal()
-    cancel_recording_requested = Signal()
-
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("TransWhisper - Voive LAN STT")
@@ -50,10 +47,9 @@ class MainWindow(QMainWindow):
         self.settings_manager = SettingsManager()
         self.saved_settings = self.settings_manager.load()
 
-        self.worker_threads: list[QThread] = []
-        self.worker_refs: dict[QThread, QObject] = {}
-        self.recording_thread: QThread | None = None
-        self.recording_worker: RecordingWorker | None = None
+        self.thread_pool = QThreadPool.globalInstance()
+        self.active_tasks: list[QRunnable] = []
+        self.recording_task: RecordingTask | None = None
         self.latest_transcript = ""
         self.elapsed_seconds = 0
 
@@ -178,11 +174,10 @@ class MainWindow(QMainWindow):
     @Slot()
     def refresh_devices(self) -> None:
         self.set_status("Refreshing microphones")
-        worker = DeviceListWorker()
-        thread = self._start_worker(worker, worker.run)
-        worker.success.connect(self.on_devices_loaded)
-        worker.error.connect(self.on_devices_error)
-        thread.start()
+        task = DeviceListTask()
+        task.signals.success.connect(self.on_devices_loaded)
+        task.signals.error.connect(self.on_devices_error)
+        self._start_task(task)
 
     @Slot(list)
     def on_devices_loaded(self, devices: list[dict[str, object]]) -> None:
@@ -213,11 +208,10 @@ class MainWindow(QMainWindow):
     def test_server(self) -> None:
         self.set_busy(True)
         self.set_status("Sending to Whisper.cpp")
-        worker = ServerTestWorker(self.current_settings())
-        thread = self._start_worker(worker, worker.run)
-        worker.success.connect(self.on_server_success)
-        worker.error.connect(self.on_worker_error)
-        thread.start()
+        task = ServerTestTask(self.current_settings())
+        task.signals.success.connect(self.on_server_success)
+        task.signals.error.connect(self.on_worker_error)
+        self._start_task(task)
 
     @Slot(str)
     def on_server_success(self, message: str) -> None:
@@ -239,26 +233,13 @@ class MainWindow(QMainWindow):
         self.level_meter.set_level(0.0)
         self.set_status("RECORDING")
 
-        worker = RecordingWorker(DEFAULT_SAMPLE_RATE, self.selected_device_index())
-        thread = QThread(self)
-        self.recording_worker = worker
-        self.recording_thread = thread
-        self.worker_refs[thread] = worker
-        self.worker_threads.append(thread)
-
-        worker.moveToThread(thread)
-        thread.started.connect(worker.start)
-        self.stop_recording_requested.connect(worker.stop)
-        self.cancel_recording_requested.connect(worker.cancel)
-        worker.started.connect(self.on_recording_started)
-        worker.level.connect(self.level_meter.set_level)
-        worker.stopped.connect(self.on_recording_stopped)
-        worker.error.connect(self.on_recording_error)
-        worker.stopped.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(lambda: self._forget_thread(thread))
-        thread.start()
+        task = RecordingTask(DEFAULT_SAMPLE_RATE, self.selected_device_index())
+        self.recording_task = task
+        task.signals.started.connect(self.on_recording_started)
+        task.signals.level.connect(self.level_meter.set_level)
+        task.signals.stopped.connect(self.on_recording_stopped)
+        task.signals.error.connect(self.on_recording_error)
+        self._start_task(task, forget_on=("stopped", "error"))
 
     @Slot()
     def on_recording_started(self) -> None:
@@ -266,17 +247,16 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def stop_recording(self) -> None:
-        if self.recording_worker is None:
+        if self.recording_task is None:
             return
         self.set_status("Saving audio")
         self.stop_button.setEnabled(False)
         self.timer.stop()
-        self.stop_recording_requested.emit()
+        self.recording_task.stop()
 
     @Slot(object)
     def on_recording_stopped(self, wav_path: object) -> None:
-        self.recording_worker = None
-        self.recording_thread = None
+        self.recording_task = None
         self.level_meter.set_level(0.0)
         self.set_status("Sending to Whisper.cpp")
         self.start_transcription(wav_path)
@@ -284,8 +264,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_recording_error(self, message: str) -> None:
         self.timer.stop()
-        self.recording_worker = None
-        self.recording_thread = None
+        self.recording_task = None
         self.level_meter.set_level(0.0)
         self.set_busy(False)
         self.set_recording_controls(recording=False)
@@ -293,11 +272,10 @@ class MainWindow(QMainWindow):
         self.append_error(message)
 
     def start_transcription(self, wav_path: object) -> None:
-        worker = TranscribeWorker(self.current_settings(), wav_path)
-        thread = self._start_worker(worker, worker.run)
-        worker.success.connect(self.on_transcription_success)
-        worker.error.connect(self.on_worker_error)
-        thread.start()
+        task = TranscribeTask(self.current_settings(), wav_path)
+        task.signals.success.connect(self.on_transcription_success)
+        task.signals.error.connect(self.on_worker_error)
+        self._start_task(task)
 
     @Slot(str)
     def on_transcription_success(self, transcript: str) -> None:
@@ -368,27 +346,26 @@ class MainWindow(QMainWindow):
         self.language_input.setEnabled(not recording)
         self.device_combo.setEnabled(not recording)
 
-    def _start_worker(self, worker: QObject, run_slot: Any) -> QThread:
-        thread = QThread(self)
-        self.worker_refs[thread] = worker
-        self.worker_threads.append(thread)
-        worker.moveToThread(thread)
-        thread.started.connect(run_slot)
-        if hasattr(worker, "success"):
-            worker.success.connect(thread.quit)
-        if hasattr(worker, "error"):
-            worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(lambda: self._forget_thread(thread))
-        return thread
+    def _start_task(
+        self,
+        task: QRunnable,
+        *,
+        forget_on: tuple[str, ...] = ("success", "error"),
+    ) -> None:
+        self.active_tasks.append(task)
+        signals = getattr(task, "signals", None)
+        if signals is not None:
+            for signal_name in forget_on:
+                signal = getattr(signals, signal_name, None)
+                if signal is not None:
+                    signal.connect(lambda *_, task=task: self._forget_task(task))
+        self.thread_pool.start(task)
 
-    def _forget_thread(self, thread: QThread) -> None:
-        self.worker_refs.pop(thread, None)
-        if thread in self.worker_threads:
-            self.worker_threads.remove(thread)
-        if thread is self.recording_thread:
-            self.recording_thread = None
-        thread.deleteLater()
+    def _forget_task(self, task: QRunnable) -> None:
+        if task in self.active_tasks:
+            self.active_tasks.remove(task)
+        if task is self.recording_task:
+            self.recording_task = None
 
     @Slot()
     def save_settings(self) -> None:
@@ -410,11 +387,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: Any) -> None:
         self.save_settings()
-        if self.recording_worker is not None:
-            self.cancel_recording_requested.emit()
-        for thread in list(self.worker_threads):
-            thread.quit()
-            thread.wait(1500)
+        if self.recording_task is not None:
+            self.recording_task.cancel()
+        self.thread_pool.waitForDone(1500)
         super().closeEvent(event)
 
 
