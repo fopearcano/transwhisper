@@ -104,6 +104,12 @@ CLI flags can override environment variables:
 python -m voice_lan_stt.cli --base-url http://192.168.1.141:8080 record --seconds 5
 ```
 
+Set the transcription language with `WHISPERCPP_LANGUAGE` or `--language`. Use a whisper.cpp language code such as `en`, `es`, `fr`, `de`, or `auto`:
+
+```bash
+python -m voice_lan_stt.cli --language es record --seconds 5
+```
+
 `WHISPERCPP_MODEL_PATH` is the model path used when printing server command hints and storing local metadata. The client does not send an OpenAI-style `model` field; the model is loaded by `whisper-server` itself.
 
 ## Whisper.cpp LAN Setup Notes
@@ -224,7 +230,7 @@ You can also run it as a module after installing the package:
 python -m voice_lan_stt.gui
 ```
 
-The GUI window title is `TransWhisper - Voive LAN STT`. It provides Whisper.cpp Base URL, inference path, and server model path fields, a microphone dropdown with refresh, Start Recording and Stop Recording buttons, a live `MM:SS` timer, a lightweight microphone level meter, Test Server, Copy Latest Transcript, Clear Transcript, a transcript area, and a status label. Recording and transcription run in worker threads, so the window remains responsive. Temporary WAV files are deleted after transcription.
+The GUI window title is `TransWhisper - Voive LAN STT`. It provides Whisper.cpp Base URL, inference path, server model path, and language fields, a microphone dropdown with refresh, Start Recording and Stop Recording buttons, a live `MM:SS` timer, a lightweight microphone level meter, Test Server, Copy Latest Transcript, Clear Transcript, a transcript area, and a status label. Recording and transcription run in worker threads, so the window remains responsive. Temporary WAV files are deleted after transcription.
 
 Transcripts are appended chronologically with timestamps, for example:
 
@@ -233,7 +239,7 @@ Transcripts are appended chronologically with timestamps, for example:
 Hello this is a test.
 ```
 
-GUI settings are saved in `settings.json`, including the last Whisper.cpp URL, inference path, server model path, selected microphone, window size, and window position. The GUI does not use a database.
+GUI settings are saved in `settings.json`, including the last Whisper.cpp URL, inference path, server model path, language, selected microphone, window size, and window position. The GUI does not use a database.
 
 Example LAN call:
 

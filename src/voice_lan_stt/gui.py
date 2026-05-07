@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
             self.saved_settings.inference_path or DEFAULT_INFERENCE_PATH
         )
         self.model_path_input = QLineEdit(self.saved_settings.model_path or DEFAULT_MODEL_PATH)
+        self.language_input = QLineEdit(self.saved_settings.language or DEFAULT_LANGUAGE)
         self.device_combo = QComboBox()
         self.refresh_devices_button = QPushButton("Refresh Devices")
         self.test_server_button = QPushButton("Test Server")
@@ -92,6 +93,7 @@ class MainWindow(QMainWindow):
         form.addRow("Whisper.cpp Base URL", self.base_url_input)
         form.addRow("Inference Path", self.inference_path_input)
         form.addRow("Server Model Path", self.model_path_input)
+        form.addRow("Language", self.language_input)
 
         device_row = QHBoxLayout()
         device_row.addWidget(self.device_combo, stretch=1)
@@ -132,6 +134,7 @@ class MainWindow(QMainWindow):
         self.base_url_input.textChanged.connect(self.save_settings)
         self.inference_path_input.textChanged.connect(self.save_settings)
         self.model_path_input.textChanged.connect(self.save_settings)
+        self.language_input.textChanged.connect(self.save_settings)
         self.device_combo.currentIndexChanged.connect(self.save_settings)
 
     def _apply_theme(self) -> None:
@@ -164,7 +167,7 @@ class MainWindow(QMainWindow):
             base_url=(self.base_url_input.text().strip() or GUI_DEFAULT_BASE_URL).rstrip("/"),
             inference_path=self.inference_path_input.text().strip() or DEFAULT_INFERENCE_PATH,
             model_path=self.model_path_input.text().strip() or DEFAULT_MODEL_PATH,
-            language=DEFAULT_LANGUAGE,
+            language=self.language_input.text().strip() or DEFAULT_LANGUAGE,
             sample_rate=DEFAULT_SAMPLE_RATE,
         )
 
@@ -362,6 +365,7 @@ class MainWindow(QMainWindow):
         self.base_url_input.setEnabled(not recording)
         self.inference_path_input.setEnabled(not recording)
         self.model_path_input.setEnabled(not recording)
+        self.language_input.setEnabled(not recording)
         self.device_combo.setEnabled(not recording)
 
     def _start_worker(self, worker: QObject, run_slot: Any) -> QThread:
@@ -395,6 +399,7 @@ class MainWindow(QMainWindow):
                 base_url=(self.base_url_input.text().strip() or GUI_DEFAULT_BASE_URL).rstrip("/"),
                 inference_path=self.inference_path_input.text().strip() or DEFAULT_INFERENCE_PATH,
                 model_path=self.model_path_input.text().strip() or DEFAULT_MODEL_PATH,
+                language=self.language_input.text().strip() or DEFAULT_LANGUAGE,
                 selected_microphone=selected_name,
                 window_width=self.width(),
                 window_height=self.height(),
