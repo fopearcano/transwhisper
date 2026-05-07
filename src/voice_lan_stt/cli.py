@@ -5,19 +5,12 @@ import sys
 from pathlib import Path
 
 from .config import Settings, load_settings
-from .diagnostics import format_diagnostic_report, run_diagnostics
+from .diagnostics import format_diagnostic_report, parse_base_url, run_diagnostics
 from .history import (
     HistoryStore,
     export_records,
     format_history,
     save_transcript_record,
-)
-from .lmstudio_client import (
-    EndpointUnsupportedError,
-    ModelUnavailableError,
-    ServerUnreachableError,
-    WhisperCppClient,
-    WhisperCppError,
 )
 from .recorder import (
     MicrophoneError,
@@ -25,6 +18,13 @@ from .recorder import (
     listen_for_vad_segments,
     record_to_temp_wav,
     record_until_enter_to_temp_wav,
+)
+from .whispercpp_client import (
+    EndpointUnsupportedError,
+    ModelUnavailableError,
+    ServerUnreachableError,
+    WhisperCppClient,
+    WhisperCppError,
 )
 
 
@@ -35,10 +35,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--base-url", help="Whisper.cpp base URL, e.g. http://192.168.1.141:8080")
     parser.add_argument(
-        "--api-key", help="Optional API key. Defaults to WHISPERCPP_API_KEY or empty."
+        "--inference-path",
+        help="Whisper.cpp inference path. Defaults to WHISPERCPP_INFERENCE_PATH or /inference.",
     )
     parser.add_argument(
-        "--model", help="STT model label. Defaults to WHISPERCPP_STT_MODEL or whisper.cpp."
+        "--model-path",
+        help=(
+            "Server-side ggml model path used for command hints. Defaults to WHISPERCPP_MODEL_PATH."
+        ),
+    )
+    parser.add_argument(
+        "--language", help="Spoken language passed to whisper-server. Defaults to en."
+    )
+    parser.add_argument("--temperature", type=float, help="Initial decoding temperature.")
+    parser.add_argument("--temperature-inc", type=float, help="Temperature fallback increment.")
+    parser.add_argument(
+        "--response-format",
+        choices=("json", "text", "srt", "verbose_json", "vtt"),
+        help="whisper-server response_format field. Defaults to json.",
     )
     parser.add_argument(
         "--sample-rate", type=int, help="Microphone sample rate. Defaults to SAMPLE_RATE or 16000."
@@ -118,6 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("diagnose", help="Run LAN connectivity diagnostics.")
     subparsers.add_parser("test-server", help="Check that the Whisper.cpp server is reachable.")
+    subparsers.add_parser("server-command", help="Print a matching whisper-server command.")
     return parser
 
 
@@ -125,9 +140,15 @@ def settings_from_args(args: argparse.Namespace) -> Settings:
     settings = load_settings()
     return Settings(
         base_url=(args.base_url or settings.base_url).rstrip("/"),
-        api_key=args.api_key or settings.api_key,
-        stt_model=args.model or settings.stt_model,
+        inference_path=args.inference_path or settings.inference_path,
+        model_path=args.model_path or settings.model_path,
+        language=args.language or settings.language,
         sample_rate=args.sample_rate or settings.sample_rate,
+        temperature=args.temperature if args.temperature is not None else settings.temperature,
+        temperature_inc=(
+            args.temperature_inc if args.temperature_inc is not None else settings.temperature_inc
+        ),
+        response_format=args.response_format or settings.response_format,
     )
 
 
@@ -141,8 +162,8 @@ def save_history(
 ) -> None:
     save_transcript_record(
         mode=mode,
-        lmstudio_base_url=settings.base_url,
-        model=settings.stt_model,
+        whispercpp_base_url=settings.base_url,
+        model_path=settings.model_path,
         wav_path=wav_path,
         transcript_text=transcript,
         keep_audio=keep_audio,
@@ -323,7 +344,7 @@ def run_diagnose(settings: Settings) -> int:
         print("Voice LAN STT diagnostics")
         print(f"Diagnostic failed unexpectedly: {exc}")
         print("Likely fixes:")
-        print("- Check WHISPERCPP_BASE_URL, WHISPERCPP_STT_MODEL, and SAMPLE_RATE.")
+        print("- Check WHISPERCPP_BASE_URL, WHISPERCPP_INFERENCE_PATH, and SAMPLE_RATE.")
         print("- Confirm whisper-server.exe is running and reachable.")
     return 0
 
@@ -337,6 +358,34 @@ def run_test_server(settings: Settings) -> int:
         return 1
 
     print(message)
+    return 0
+
+
+def run_server_command(settings: Settings) -> int:
+    try:
+        parsed = parse_base_url(settings.base_url)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    executable = "whisper-server.exe" if sys.platform == "win32" else "whisper-server"
+    print(
+        " ".join(
+            [
+                executable,
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(parsed.port),
+                "--model",
+                settings.model_path,
+                "--inference-path",
+                settings.inference_path,
+                "--language",
+                settings.language,
+            ]
+        )
+    )
     return 0
 
 
@@ -376,6 +425,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_diagnose(settings=settings)
     if args.command == "test-server":
         return run_test_server(settings=settings)
+    if args.command == "server-command":
+        return run_server_command(settings=settings)
 
     parser.error(f"unknown command {args.command!r}")
     return 2

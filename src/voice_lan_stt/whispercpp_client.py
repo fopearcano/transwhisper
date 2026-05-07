@@ -17,7 +17,7 @@ class ServerUnreachableError(WhisperCppError):
 
 
 class ModelUnavailableError(WhisperCppError):
-    """Raised when the requested STT model is unavailable."""
+    """Raised when the server reports a model/load problem."""
 
 
 class EndpointUnsupportedError(WhisperCppError):
@@ -31,9 +31,7 @@ class WhisperCppClient:
 
     @property
     def headers(self) -> dict[str, str]:
-        if not self.settings.api_key:
-            return {}
-        return {"Authorization": f"Bearer {self.settings.api_key}"}
+        return {}
 
     def test_server(self) -> str:
         try:
@@ -55,21 +53,13 @@ class WhisperCppClient:
             f"(HTTP {response.status_code})."
         )
 
-    def list_models(self) -> list[str]:
-        self.test_server()
-        return [self.settings.stt_model]
-
     def transcribe(self, wav_path: Path) -> str:
         try:
             with wav_path.open("rb") as audio_file:
                 response = requests.post(
                     self.settings.transcription_url,
                     headers=self.headers,
-                    data={
-                        "temperature": "0.0",
-                        "temperature_inc": "0.2",
-                        "response_format": "json",
-                    },
+                    data=self._inference_form(),
                     files={"file": (wav_path.name, audio_file, "audio/wav")},
                     timeout=self.timeout,
                 )
@@ -81,13 +71,13 @@ class WhisperCppClient:
 
         if response.status_code == 404:
             raise EndpointUnsupportedError(
-                "The server does not support /inference. "
-                "Confirm whisper-server.exe is running and reachable on the configured port."
+                f"The server does not support {self.settings.inference_path}. "
+                "Confirm whisper-server is running with the expected --inference-path."
             )
         if response.status_code in {400, 404, 422} and self._mentions_model(response):
             raise ModelUnavailableError(
-                f"Model {self.settings.stt_model!r} is unavailable. Start whisper-server.exe "
-                "with the intended model file."
+                "Whisper.cpp reported a model problem. Start whisper-server with "
+                f"--model {self.settings.model_path!r} or the intended ggml model file."
             )
         self._raise_for_error_status(response)
 
@@ -95,6 +85,14 @@ class WhisperCppClient:
         if not isinstance(transcript, str):
             raise WhisperCppError("The transcription response did not include a text field.")
         return transcript
+
+    def _inference_form(self) -> dict[str, str]:
+        return {
+            "temperature": f"{self.settings.temperature:g}",
+            "temperature_inc": f"{self.settings.temperature_inc:g}",
+            "response_format": self.settings.response_format,
+            "language": self.settings.language,
+        }
 
     @staticmethod
     def _mentions_model(response: requests.Response) -> bool:
@@ -132,7 +130,3 @@ def _transcript_from_response(response: requests.Response) -> str | None:
         text = payload.get("text")
         return text if isinstance(text, str) else None
     return None
-
-
-LMStudioError = WhisperCppError
-LMStudioClient = WhisperCppClient

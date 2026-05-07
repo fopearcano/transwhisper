@@ -25,7 +25,13 @@ except ImportError as exc:  # pragma: no cover
         "PySide6 is required for the desktop GUI. Install with: pip install PySide6"
     ) from exc
 
-from .config import DEFAULT_API_KEY, DEFAULT_SAMPLE_RATE, DEFAULT_STT_MODEL, Settings
+from .config import (
+    DEFAULT_INFERENCE_PATH,
+    DEFAULT_LANGUAGE,
+    DEFAULT_MODEL_PATH,
+    DEFAULT_SAMPLE_RATE,
+    Settings,
+)
 from .settings_manager import GuiSettings, SettingsManager
 from .widgets import LevelMeter
 from .workers import DeviceListWorker, RecordingWorker, ServerTestWorker, TranscribeWorker
@@ -55,7 +61,10 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.update_recording_timer)
 
         self.base_url_input = QLineEdit(self.saved_settings.base_url or GUI_DEFAULT_BASE_URL)
-        self.model_input = QLineEdit(self.saved_settings.model or DEFAULT_STT_MODEL)
+        self.inference_path_input = QLineEdit(
+            self.saved_settings.inference_path or DEFAULT_INFERENCE_PATH
+        )
+        self.model_path_input = QLineEdit(self.saved_settings.model_path or DEFAULT_MODEL_PATH)
         self.device_combo = QComboBox()
         self.refresh_devices_button = QPushButton("Refresh Devices")
         self.test_server_button = QPushButton("Test Server")
@@ -81,7 +90,8 @@ class MainWindow(QMainWindow):
     def _build_layout(self) -> None:
         form = QFormLayout()
         form.addRow("Whisper.cpp Base URL", self.base_url_input)
-        form.addRow("STT Model", self.model_input)
+        form.addRow("Inference Path", self.inference_path_input)
+        form.addRow("Server Model Path", self.model_path_input)
 
         device_row = QHBoxLayout()
         device_row.addWidget(self.device_combo, stretch=1)
@@ -120,7 +130,8 @@ class MainWindow(QMainWindow):
         self.copy_latest_button.clicked.connect(self.copy_latest_transcript)
         self.clear_button.clicked.connect(self.clear_transcripts)
         self.base_url_input.textChanged.connect(self.save_settings)
-        self.model_input.textChanged.connect(self.save_settings)
+        self.inference_path_input.textChanged.connect(self.save_settings)
+        self.model_path_input.textChanged.connect(self.save_settings)
         self.device_combo.currentIndexChanged.connect(self.save_settings)
 
     def _apply_theme(self) -> None:
@@ -151,8 +162,9 @@ class MainWindow(QMainWindow):
     def current_settings(self) -> Settings:
         return Settings(
             base_url=(self.base_url_input.text().strip() or GUI_DEFAULT_BASE_URL).rstrip("/"),
-            api_key=DEFAULT_API_KEY,
-            stt_model=self.model_input.text().strip() or DEFAULT_STT_MODEL,
+            inference_path=self.inference_path_input.text().strip() or DEFAULT_INFERENCE_PATH,
+            model_path=self.model_path_input.text().strip() or DEFAULT_MODEL_PATH,
+            language=DEFAULT_LANGUAGE,
             sample_rate=DEFAULT_SAMPLE_RATE,
         )
 
@@ -348,7 +360,8 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(not recording and self.device_combo.count() > 0)
         self.stop_button.setEnabled(recording)
         self.base_url_input.setEnabled(not recording)
-        self.model_input.setEnabled(not recording)
+        self.inference_path_input.setEnabled(not recording)
+        self.model_path_input.setEnabled(not recording)
         self.device_combo.setEnabled(not recording)
 
     def _start_worker(self, worker: QObject, run_slot: Any) -> QThread:
@@ -380,7 +393,8 @@ class MainWindow(QMainWindow):
         self.settings_manager.save(
             GuiSettings(
                 base_url=(self.base_url_input.text().strip() or GUI_DEFAULT_BASE_URL).rstrip("/"),
-                model=self.model_input.text().strip() or DEFAULT_STT_MODEL,
+                inference_path=self.inference_path_input.text().strip() or DEFAULT_INFERENCE_PATH,
+                model_path=self.model_path_input.text().strip() or DEFAULT_MODEL_PATH,
                 selected_microphone=selected_name,
                 window_width=self.width(),
                 window_height=self.height(),

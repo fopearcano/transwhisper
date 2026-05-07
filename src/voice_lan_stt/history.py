@@ -24,8 +24,8 @@ class TranscriptRecord:
     duration_seconds: float | None
     transcript_text: str
     audio_path: str | None
-    lmstudio_base_url: str
-    model: str
+    whispercpp_base_url: str
+    model_path: str
 
 
 def user_data_dir() -> Path:
@@ -74,8 +74,8 @@ def save_transcript_record(
     mode: str,
     wav_path: Path,
     transcript_text: str,
-    lmstudio_base_url: str,
-    model: str,
+    whispercpp_base_url: str,
+    model_path: str,
     keep_audio: bool = False,
     store: HistoryStore | None = None,
 ) -> TranscriptRecord:
@@ -86,8 +86,8 @@ def save_transcript_record(
         duration_seconds=duration_seconds,
         transcript_text=transcript_text,
         audio_path=audio_path,
-        lmstudio_base_url=lmstudio_base_url,
-        model=model,
+        whispercpp_base_url=whispercpp_base_url,
+        model_path=model_path,
     )
 
 
@@ -107,11 +107,12 @@ class HistoryStore:
                     duration_seconds REAL,
                     transcript_text TEXT NOT NULL,
                     audio_path TEXT,
-                    lmstudio_base_url TEXT NOT NULL,
-                    model TEXT NOT NULL
+                    whispercpp_base_url TEXT NOT NULL,
+                    model_path TEXT NOT NULL
                 )
                 """
             )
+            self._migrate_legacy_columns(connection)
 
     def insert(
         self,
@@ -120,8 +121,8 @@ class HistoryStore:
         duration_seconds: float | None,
         transcript_text: str,
         audio_path: Path | None,
-        lmstudio_base_url: str,
-        model: str,
+        whispercpp_base_url: str,
+        model_path: str,
         created_at: str | None = None,
     ) -> TranscriptRecord:
         self.initialize()
@@ -135,8 +136,8 @@ class HistoryStore:
                     duration_seconds,
                     transcript_text,
                     audio_path,
-                    lmstudio_base_url,
-                    model
+                    whispercpp_base_url,
+                    model_path
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -146,8 +147,8 @@ class HistoryStore:
                     duration_seconds,
                     transcript_text,
                     str(audio_path) if audio_path is not None else None,
-                    lmstudio_base_url,
-                    model,
+                    whispercpp_base_url,
+                    model_path,
                 ),
             )
             record_id = int(cursor.lastrowid)
@@ -159,8 +160,8 @@ class HistoryStore:
             duration_seconds=duration_seconds,
             transcript_text=transcript_text,
             audio_path=str(audio_path) if audio_path is not None else None,
-            lmstudio_base_url=lmstudio_base_url,
-            model=model,
+            whispercpp_base_url=whispercpp_base_url,
+            model_path=model_path,
         )
 
     def search(self, *, limit: int = 10, keyword: str | None = None) -> list[TranscriptRecord]:
@@ -208,9 +209,21 @@ class HistoryStore:
             ),
             transcript_text=str(row["transcript_text"]),
             audio_path=str(row["audio_path"]) if row["audio_path"] is not None else None,
-            lmstudio_base_url=str(row["lmstudio_base_url"]),
-            model=str(row["model"]),
+            whispercpp_base_url=str(row["whispercpp_base_url"]),
+            model_path=str(row["model_path"]),
         )
+
+    @staticmethod
+    def _migrate_legacy_columns(connection: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(transcripts)")}
+        if "lmstudio_base_url" in columns and "whispercpp_base_url" not in columns:
+            connection.execute(
+                "ALTER TABLE transcripts RENAME COLUMN lmstudio_base_url TO whispercpp_base_url"
+            )
+            columns.remove("lmstudio_base_url")
+            columns.add("whispercpp_base_url")
+        if "model" in columns and "model_path" not in columns:
+            connection.execute("ALTER TABLE transcripts RENAME COLUMN model TO model_path")
 
 
 def format_history(records: Sequence[TranscriptRecord]) -> str:
@@ -223,7 +236,7 @@ def format_history(records: Sequence[TranscriptRecord]) -> str:
             f"{record.duration_seconds:.2f}s" if record.duration_seconds is not None else "unknown"
         )
         lines.append(
-            f"#{record.id} {record.created_at} {record.mode} {duration} model={record.model}"
+            f"#{record.id} {record.created_at} {record.mode} {duration} model={record.model_path}"
         )
         lines.append(record.transcript_text)
         if record.audio_path:

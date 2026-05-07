@@ -39,7 +39,8 @@ def test_format_diagnostic_report_success() -> None:
     report = DiagnosticReport(
         hostname="client-host",
         base_url="http://192.168.1.141:8080",
-        model="whisper.cpp",
+        inference_path="/inference",
+        model_path="models/ggml-base.en.bin",
         parsed_url=ParsedBaseUrl("http", "192.168.1.141", 8080, ""),
         tcp=CheckResult(True, "connected"),
         server=CheckResult(True, "server reachable"),
@@ -59,7 +60,8 @@ def test_format_diagnostic_report_tcp_failure_includes_actionable_fixes() -> Non
     report = DiagnosticReport(
         hostname="client-host",
         base_url="http://192.168.1.141:8080",
-        model="whisper.cpp",
+        inference_path="/inference",
+        model_path="models/ggml-base.en.bin",
         parsed_url=ParsedBaseUrl("http", "192.168.1.141", 8080, ""),
         tcp=CheckResult(False, "connection refused"),
         server=CheckResult(False, "skipped because TCP connection failed"),
@@ -79,7 +81,8 @@ def test_format_diagnostic_report_localhost_fix() -> None:
     report = DiagnosticReport(
         hostname="client-host",
         base_url="http://localhost:8080",
-        model="whisper.cpp",
+        inference_path="/inference",
+        model_path="models/ggml-base.en.bin",
         parsed_url=ParsedBaseUrl("http", "localhost", 8080, ""),
         tcp=CheckResult(True, "connected"),
         server=CheckResult(True, "server reachable"),

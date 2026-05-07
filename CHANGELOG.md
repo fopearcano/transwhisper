@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- Switched the default server target from LM Studio to Whisper.cpp `whisper-server.exe`.
+- Switched the default server target to Whisper.cpp `whisper-server.exe`.
 - Changed the default server URL to `http://192.168.1.141:8080`.
 - Updated the desktop title to `TransWhisper - Voive LAN STT`.
+- Replaced the hosted-transcription request shape with Whisper.cpp `POST /inference` multipart form requests and added `server-command`.
 
 ## 0.1.0
 

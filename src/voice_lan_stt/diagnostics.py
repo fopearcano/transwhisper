@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .config import Settings
-from .lmstudio_client import (
+from .whispercpp_client import (
     EndpointUnsupportedError,
     ModelUnavailableError,
     ServerUnreachableError,
@@ -34,13 +34,13 @@ class CheckResult:
 class DiagnosticReport:
     hostname: str
     base_url: str
-    model: str
+    inference_path: str
+    model_path: str
     parsed_url: ParsedBaseUrl | None
     url_error: str | None = None
     tcp: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
     server: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
     audio_endpoint: CheckResult = field(default_factory=lambda: CheckResult(False, "not run"))
-    available_models: list[str] = field(default_factory=list)
     likely_fixes: list[str] = field(default_factory=list)
 
 
@@ -122,7 +122,7 @@ def check_audio_endpoint(settings: Settings) -> CheckResult:
         if wav_path is not None:
             wav_path.unlink(missing_ok=True)
 
-    return CheckResult(True, "POST /inference accepted a short silent WAV")
+    return CheckResult(True, f"POST {settings.inference_path} accepted a short silent WAV")
 
 
 def run_diagnostics(settings: Settings) -> DiagnosticReport:
@@ -130,7 +130,8 @@ def run_diagnostics(settings: Settings) -> DiagnosticReport:
     report = DiagnosticReport(
         hostname=hostname,
         base_url=settings.base_url,
-        model=settings.stt_model,
+        inference_path=settings.inference_path,
+        model_path=settings.model_path,
         parsed_url=None,
     )
 
@@ -159,7 +160,8 @@ def format_diagnostic_report(report: DiagnosticReport) -> str:
         "Voice LAN STT diagnostics",
         f"Local hostname: {report.hostname}",
         f"Configured Whisper.cpp base URL: {report.base_url}",
-        f"Configured model label: {report.model}",
+        f"Configured inference path: {report.inference_path}",
+        f"Configured server model path: {report.model_path}",
     ]
 
     if report.parsed_url is None:
@@ -178,13 +180,7 @@ def format_diagnostic_report(report: DiagnosticReport) -> str:
         ]
     )
 
-    if report.available_models:
-        lines.append("Available models:")
-        for model in report.available_models:
-            marker = " (configured)" if model == report.model else ""
-            lines.append(f"- {model}{marker}")
-
-    lines.append(_format_check("POST /inference", report.audio_endpoint))
+    lines.append(_format_check(f"POST {report.inference_path}", report.audio_endpoint))
     lines.append("Likely fixes:")
     if report.likely_fixes:
         lines.extend(f"- {fix}" for fix in report.likely_fixes)
@@ -231,14 +227,12 @@ def likely_fixes(report: DiagnosticReport) -> list[str]:
             ]
         )
 
-    if report.available_models and report.model not in report.available_models:
-        fixes.append(f"Wrong model label: configured model {report.model!r} was not listed.")
-
     if not report.audio_endpoint.ok:
         message = report.audio_endpoint.message.lower()
         if "unsupported" in message or "404" in message:
             fixes.append(
-                "Audio endpoint unsupported: confirm whisper-server.exe exposes POST /inference."
+                "Audio endpoint unsupported: confirm whisper-server was started with "
+                f"--inference-path {report.inference_path}."
             )
         if "model unavailable" in message:
             fixes.append(

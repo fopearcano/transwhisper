@@ -10,7 +10,9 @@ def test_settings_manager_round_trip(tmp_path) -> None:
     manager.save(
         GuiSettings(
             base_url="http://192.168.1.141:8080",
-            model="whisper-local",
+            inference_path="/inference",
+            model_path="models/ggml-small.en.bin",
+            language="es",
             selected_microphone="USB Mic",
             window_width=1000,
             window_height=700,
@@ -22,7 +24,9 @@ def test_settings_manager_round_trip(tmp_path) -> None:
     loaded = manager.load()
 
     assert loaded.base_url == "http://192.168.1.141:8080"
-    assert loaded.model == "whisper-local"
+    assert loaded.inference_path == "/inference"
+    assert loaded.model_path == "models/ggml-small.en.bin"
+    assert loaded.language == "es"
     assert loaded.selected_microphone == "USB Mic"
     assert loaded.window_width == 1000
     assert loaded.window_height == 700

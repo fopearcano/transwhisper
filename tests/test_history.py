@@ -13,8 +13,8 @@ def test_history_insert_and_search(tmp_path) -> None:
         duration_seconds=5.0,
         transcript_text="hello from the microphone",
         audio_path=None,
-        lmstudio_base_url="http://192.168.1.141:8080",
-        model="whisper.cpp",
+        whispercpp_base_url="http://192.168.1.141:8080",
+        model_path="models/ggml-base.en.bin",
         created_at="2026-05-06T10:00:00+00:00",
     )
     store.insert(
@@ -22,8 +22,8 @@ def test_history_insert_and_search(tmp_path) -> None:
         duration_seconds=1.25,
         transcript_text="different phrase",
         audio_path=tmp_path / "clip.wav",
-        lmstudio_base_url="http://192.168.1.141:8080",
-        model="whisper-lan",
+        whispercpp_base_url="http://192.168.1.141:8080",
+        model_path="models/ggml-small.en.bin",
         created_at="2026-05-06T10:01:00+00:00",
     )
 
@@ -44,8 +44,8 @@ def test_history_limit_orders_newest_first(tmp_path) -> None:
             duration_seconds=float(index),
             transcript_text=f"entry {index}",
             audio_path=None,
-            lmstudio_base_url="http://192.168.1.141:8080",
-            model="whisper.cpp",
+            whispercpp_base_url="http://192.168.1.141:8080",
+            model_path="models/ggml-base.en.bin",
             created_at=f"2026-05-06T10:0{index}:00+00:00",
         )
 
@@ -61,8 +61,8 @@ def test_export_records_as_json(tmp_path) -> None:
         duration_seconds=2.5,
         transcript_text="json export text",
         audio_path=None,
-        lmstudio_base_url="http://192.168.1.141:8080",
-        model="whisper.cpp",
+        whispercpp_base_url="http://192.168.1.141:8080",
+        model_path="models/ggml-base.en.bin",
         created_at="2026-05-06T10:00:00+00:00",
     )
 
@@ -80,8 +80,8 @@ def test_export_records_as_txt(tmp_path) -> None:
         duration_seconds=3.0,
         transcript_text="plain text export",
         audio_path=None,
-        lmstudio_base_url="http://192.168.1.141:8080",
-        model="whisper.cpp",
+        whispercpp_base_url="http://192.168.1.141:8080",
+        model_path="models/ggml-base.en.bin",
         created_at="2026-05-06T10:00:00+00:00",
     )
 

@@ -11,7 +11,9 @@ SETTINGS_FILENAME = "settings.json"
 @dataclass
 class GuiSettings:
     base_url: str = "http://192.168.1.141:8080"
-    model: str = "whisper.cpp"
+    inference_path: str = "/inference"
+    model_path: str = "models/ggml-base.en.bin"
+    language: str = "en"
     selected_microphone: str | None = None
     window_width: int = 920
     window_height: int = 680
@@ -41,6 +43,8 @@ class SettingsManager:
 
         defaults = GuiSettings()
         data: dict[str, Any] = asdict(defaults)
+        if "model" in raw and "model_path" not in raw:
+            raw["model_path"] = raw["model"]
         data.update({key: raw.get(key, value) for key, value in data.items()})
         return GuiSettings(**data)
 

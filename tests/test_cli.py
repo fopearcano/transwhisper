@@ -84,10 +84,23 @@ def test_parse_test_server() -> None:
     assert args.command == "test-server"
 
 
+def test_parse_global_language_option() -> None:
+    args = build_parser().parse_args(["--language", "es", "record"])
+
+    assert args.command == "record"
+    assert args.language == "es"
+
+
 def test_parse_diagnose() -> None:
     args = build_parser().parse_args(["diagnose"])
 
     assert args.command == "diagnose"
+
+
+def test_parse_server_command() -> None:
+    args = build_parser().parse_args(["server-command"])
+
+    assert args.command == "server-command"
 
 
 def test_parse_history_options() -> None:
@@ -109,25 +122,31 @@ def test_parse_export_options() -> None:
 def test_settings_from_cli_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "WHISPERCPP_BASE_URL",
-        "WHISPERCPP_API_KEY",
-        "WHISPERCPP_STT_MODEL",
-        "LMSTUDIO_BASE_URL",
-        "LMSTUDIO_API_KEY",
-        "LMSTUDIO_STT_MODEL",
+        "WHISPERCPP_INFERENCE_PATH",
+        "WHISPERCPP_MODEL_PATH",
+        "WHISPERCPP_LANGUAGE",
         "SAMPLE_RATE",
     ):
         monkeypatch.delenv(name, raising=False)
 
     args = Namespace(
         base_url="http://192.168.1.141:8080/",
-        api_key="abc",
-        model="whisper-lan",
+        inference_path="/transcribe",
+        model_path="models/ggml-small.en.bin",
+        language="auto",
         sample_rate=22050,
+        temperature=0.1,
+        temperature_inc=0.3,
+        response_format="text",
     )
 
     settings = settings_from_args(args)
 
     assert settings.base_url == "http://192.168.1.141:8080"
-    assert settings.api_key == "abc"
-    assert settings.stt_model == "whisper-lan"
+    assert settings.inference_path == "/transcribe"
+    assert settings.model_path == "models/ggml-small.en.bin"
+    assert settings.language == "auto"
     assert settings.sample_rate == 22050
+    assert settings.temperature == 0.1
+    assert settings.temperature_inc == 0.3
+    assert settings.response_format == "text"

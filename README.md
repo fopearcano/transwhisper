@@ -82,15 +82,20 @@ pip install -e ".[gui]"
 Defaults:
 
 - `WHISPERCPP_BASE_URL=http://192.168.1.141:8080`
-- `WHISPERCPP_API_KEY=` optional
-- `WHISPERCPP_STT_MODEL=whisper.cpp`
+- `WHISPERCPP_INFERENCE_PATH=/inference`
+- `WHISPERCPP_MODEL_PATH=models/ggml-base.en.bin`
+- `WHISPERCPP_LANGUAGE=en`
+- `WHISPERCPP_TEMPERATURE=0.0`
+- `WHISPERCPP_TEMPERATURE_INC=0.2`
+- `WHISPERCPP_RESPONSE_FORMAT=json`
 - `SAMPLE_RATE=16000`
 
 For a LAN server, point the base URL at the host machine running `whisper-server.exe`:
 
 ```bash
 export WHISPERCPP_BASE_URL=http://192.168.1.141:8080
-export WHISPERCPP_STT_MODEL=whisper.cpp
+export WHISPERCPP_INFERENCE_PATH=/inference
+export WHISPERCPP_MODEL_PATH=models/ggml-base.en.bin
 ```
 
 CLI flags can override environment variables:
@@ -99,7 +104,7 @@ CLI flags can override environment variables:
 python -m voice_lan_stt.cli --base-url http://192.168.1.141:8080 record --seconds 5
 ```
 
-Legacy `LMSTUDIO_*` environment variables are still accepted as a fallback, but new setups should use `WHISPERCPP_*`.
+`WHISPERCPP_MODEL_PATH` is the model path used when printing server command hints and storing local metadata. The client does not send an OpenAI-style `model` field; the model is loaded by `whisper-server` itself.
 
 ## Whisper.cpp LAN Setup Notes
 
@@ -113,7 +118,13 @@ Legacy `LMSTUDIO_*` environment variables are still accepted as a fallback, but 
 Example Windows server command:
 
 ```powershell
-.\whisper-server.exe --host 0.0.0.0 --port 8080 -m .\models\ggml-base.en.bin
+.\whisper-server.exe --host 0.0.0.0 --port 8080 --model .\models\ggml-base.en.bin --inference-path /inference --language en
+```
+
+The app can print a matching command from your configured URL, port, model path, inference path, and language:
+
+```bash
+python -m voice_lan_stt.cli server-command
 ```
 
 ## Usage
@@ -130,7 +141,7 @@ Run LAN diagnostics:
 python -m voice_lan_stt.cli diagnose
 ```
 
-The diagnostic command prints the local hostname, configured Whisper.cpp base URL, parsed host and port, TCP connection result, server root result, and a short `/inference` probe using a generated silent WAV. It never needs microphone access. Use it when a LAN client cannot reach Whisper.cpp; the likely-fixes section calls out common issues like firewall rules, wrong IP address, `whisper-server.exe` not running, server bound only to `localhost`, and unsupported `/inference` endpoints.
+The diagnostic command prints the local hostname, configured Whisper.cpp base URL, parsed host and port, TCP connection result, server root result, and a short `/inference` probe using a generated silent WAV. It never needs microphone access. Use it when a LAN client cannot reach Whisper.cpp; the likely-fixes section calls out common issues like firewall rules, wrong IP address, `whisper-server.exe` not running, server bound only to `localhost`, unsupported `/inference` endpoints, and missing model files on the server.
 
 Record five seconds, send the WAV to `/inference`, and print the transcript:
 
@@ -213,7 +224,7 @@ You can also run it as a module after installing the package:
 python -m voice_lan_stt.gui
 ```
 
-The GUI window title is `TransWhisper - Voive LAN STT`. It provides Whisper.cpp Base URL and model label fields, a microphone dropdown with refresh, Start Recording and Stop Recording buttons, a live `MM:SS` timer, a lightweight microphone level meter, Test Server, Copy Latest Transcript, Clear Transcript, a transcript area, and a status label. Recording and transcription run in worker threads, so the window remains responsive. Temporary WAV files are deleted after transcription.
+The GUI window title is `TransWhisper - Voive LAN STT`. It provides Whisper.cpp Base URL, inference path, and server model path fields, a microphone dropdown with refresh, Start Recording and Stop Recording buttons, a live `MM:SS` timer, a lightweight microphone level meter, Test Server, Copy Latest Transcript, Clear Transcript, a transcript area, and a status label. Recording and transcription run in worker threads, so the window remains responsive. Temporary WAV files are deleted after transcription.
 
 Transcripts are appended chronologically with timestamps, for example:
 
@@ -222,7 +233,7 @@ Transcripts are appended chronologically with timestamps, for example:
 Hello this is a test.
 ```
 
-GUI settings are saved in `settings.json`, including the last Whisper.cpp URL, selected microphone, selected model label, window size, and window position. The GUI does not use a database.
+GUI settings are saved in `settings.json`, including the last Whisper.cpp URL, inference path, server model path, selected microphone, window size, and window position. The GUI does not use a database.
 
 Example LAN call:
 
@@ -234,7 +245,7 @@ WHISPERCPP_BASE_URL=http://192.168.1.141:8080 python -m voice_lan_stt.cli record
 
 - `Could not reach Whisper.cpp`: confirm `whisper-server.exe` is running, the host IP is correct, and the firewall allows port `8080`.
 - `The server does not support /inference`: confirm you are pointing at Whisper.cpp `whisper-server.exe`.
-- Empty transcript: confirm the server was started with a valid model file and the microphone captured speech.
+- Empty transcript: confirm the server was started with a valid `--model` file and the microphone captured speech.
 - `Could not record from the microphone`: confirm a mic is connected and the terminal has microphone permission.
 - `Clipboard copy requires the optional dependency pyperclip`: install the clipboard extra with `pip install -e ".[clipboard]"`.
 

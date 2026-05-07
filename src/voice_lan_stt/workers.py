@@ -10,8 +10,8 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from .config import Settings
-from .lmstudio_client import WhisperCppClient
 from .recorder import ManualRecordingSession
+from .whispercpp_client import WhisperCppClient
 
 
 class DeviceListWorker(QObject):
